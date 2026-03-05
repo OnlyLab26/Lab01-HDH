@@ -80,6 +80,7 @@ void ReadFile(string filename, vector<Queue> &Q, vector<Process> &P){
     for(int i = 0; i < 3; i++){
         getline(input, Q[i].QID, ' ');
         input >> Q[i].timeSlice;
+        input.ignore();
         getline(input, Q[i].schedulingPolicy);
     }
     P.resize(5);
@@ -87,6 +88,7 @@ void ReadFile(string filename, vector<Queue> &Q, vector<Process> &P){
         getline(input, P[i].PID, ' ');
         input >> P[i].arrivalTime;
         input >> P[i].burstTime;
+        input.ignore();
         getline(input, P[i].queueID);
     }
     input.close();
