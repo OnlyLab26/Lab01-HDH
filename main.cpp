@@ -93,7 +93,7 @@ void ReadFile(string filename, vector<Queue> &Q, vector<Process> &P){
     input.close();
 }
 
-int FindShortestProcess(const vector<Process*>& readyQueue) {
+int findShortestProcess(const vector<Process*>& readyQueue) {
     if (readyQueue.empty()) return -1; 
     
     int minIndex = 0; 
@@ -109,7 +109,7 @@ int FindShortestProcess(const vector<Process*>& readyQueue) {
     return minIndex;
 }
 
-void RunSRTN(vector<Process>& P, Queue& Q) {
+void runSRTN(vector<Process>& P, Queue& Q) {
     int currentTime = 0;
     int completedCount = 0;
     int n = P.size();
@@ -129,7 +129,7 @@ void RunSRTN(vector<Process>& P, Queue& Q) {
             }
         }
 
-        int bestIndex = FindShortestProcess(Q.readyQueue);
+        int bestIndex = findShortestProcess(Q.readyQueue);
         if (bestIndex != -1) {
             Process* currentProcess = Q.readyQueue[bestIndex];
             currentProcess->remainingTime--;
@@ -148,7 +148,7 @@ void RunSRTN(vector<Process>& P, Queue& Q) {
     }
 }
 
-void RunSJF(vector<Process>& P, Queue& Q) {
+void runSJF(vector<Process>& P, Queue& Q) {
     int currentTime = 0;
     int completedCount = 0;
     int n = P.size();
@@ -170,7 +170,7 @@ void RunSJF(vector<Process>& P, Queue& Q) {
         }
 
         if (activeProcess == nullptr && !Q.readyQueue.empty()) {
-            int bestIndex = FindShortestProcess(Q.readyQueue);
+            int bestIndex = findShortestProcess(Q.readyQueue);
             if (bestIndex != -1) {
                 activeProcess = Q.readyQueue[bestIndex];
                 Q.readyQueue.erase(Q.readyQueue.begin() + bestIndex);
@@ -210,12 +210,11 @@ int main(){
     for(int i = 0; i < Q.size(); i++) {
         cout << Q[i].QID << " " << Q[i].schedulingPolicy << endl;
         
-        // TEST SRTN va SJF
         if (Q[i].schedulingPolicy == "SRTN") {
-            RunSRTN(P, Q[i]);
+            runSRTN(P, Q[i]);
         } 
         else if (Q[i].schedulingPolicy == "SJF") {
-            RunSJF(P, Q[i]);
+            runSJF(P, Q[i]);
         }
         else {
             cout << "Loi: Khong chon duoc" << endl;
