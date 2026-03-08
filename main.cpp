@@ -6,12 +6,11 @@
 using namespace std;
 
 struct Process {
-    // Biến tĩnh(nạp từ input.txt)
     string PID;
     int arrivalTime;
     int burstTime;
     string queueID;
-    // Biến động trong quá trình thực thi
+
     int remainingTime;
     int completionTime;
     int turnaroundTime;
@@ -94,15 +93,134 @@ void ReadFile(string filename, vector<Queue> &Q, vector<Process> &P){
     input.close();
 }
 
+int FindShortestProcess(const vector<Process*>& readyQueue) {
+    if (readyQueue.empty()) return -1; 
+    
+    int minIndex = 0; 
+    for (int i = 1; i < readyQueue.size(); i++) {
+        if (readyQueue[i]->remainingTime < readyQueue[minIndex]->remainingTime) {
+            minIndex = i;
+        } else if (readyQueue[i]->remainingTime == readyQueue[minIndex]->remainingTime) {
+            if (readyQueue[i]->arrivalTime < readyQueue[minIndex]->arrivalTime) {
+                minIndex = i;
+            }
+        }
+    }
+    return minIndex;
+}
+
+void RunSRTN(vector<Process>& P, Queue& Q) {
+    int currentTime = 0;
+    int completedCount = 0;
+    int n = P.size();
+
+    int expectedProcesses = 0;
+    for (int i = 0; i < n; i++) {
+        if (P[i].queueID == Q.QID) {
+            expectedProcesses++;
+        }
+    }
+
+    while (completedCount < expectedProcesses) {
+        
+        for (int i = 0; i < n; i++) {
+            if (P[i].arrivalTime == currentTime && P[i].queueID == Q.QID) {
+                Q.readyQueue.push_back(&P[i]);
+            }
+        }
+
+        int bestIndex = FindShortestProcess(Q.readyQueue);
+        if (bestIndex != -1) {
+            Process* currentProcess = Q.readyQueue[bestIndex];
+            currentProcess->remainingTime--;
+
+            if (currentProcess->remainingTime == 0) {
+                currentProcess->completionTime = currentTime + 1;
+                currentProcess->turnaroundTime = currentProcess->completionTime - currentProcess->arrivalTime;
+                currentProcess->waitingTime = currentProcess->turnaroundTime - currentProcess->burstTime;
+                currentProcess->isCompleted = true;
+                
+                completedCount++;
+                Q.readyQueue.erase(Q.readyQueue.begin() + bestIndex);
+            }
+        }
+        currentTime++;
+    }
+}
+
+void RunSJF(vector<Process>& P, Queue& Q) {
+    int currentTime = 0;
+    int completedCount = 0;
+    int n = P.size();
+    Process* activeProcess = nullptr;
+
+    int expectedProcesses = 0;
+    for (int i = 0; i < n; i++) {
+        if (P[i].queueID == Q.QID) {
+            expectedProcesses++;
+        }
+    }
+
+    while (completedCount < expectedProcesses) {
+        
+        for (int i = 0; i < n; i++) {
+            if (P[i].arrivalTime == currentTime && P[i].queueID == Q.QID) {
+                Q.readyQueue.push_back(&P[i]);
+            }
+        }
+
+        if (activeProcess == nullptr && !Q.readyQueue.empty()) {
+            int bestIndex = FindShortestProcess(Q.readyQueue);
+            if (bestIndex != -1) {
+                activeProcess = Q.readyQueue[bestIndex];
+                Q.readyQueue.erase(Q.readyQueue.begin() + bestIndex);
+            }
+        }
+
+
+        if (activeProcess != nullptr) {
+            activeProcess->remainingTime--;
+
+            if (activeProcess->remainingTime == 0) {
+                activeProcess->completionTime = currentTime + 1;
+                activeProcess->turnaroundTime = activeProcess->completionTime - activeProcess->arrivalTime;
+                activeProcess->waitingTime = activeProcess->turnaroundTime - activeProcess->burstTime;
+                activeProcess->isCompleted = true;
+                
+                completedCount++;
+                activeProcess = nullptr;
+            }
+        }
+        currentTime++;
+    }
+}
+
 int main(){
     vector<Queue> Q;
     vector<Process> P;
+
     ReadFile("input.txt", Q, P);
+
     for(int i = 0; i < 3; i++){
         cout << Q[i].QID << " " << Q[i].timeSlice << " " << Q[i].schedulingPolicy << endl;
     }
     for(int i = 0; i < 5; i++){
         cout << P[i].PID << " " << P[i].arrivalTime << " " << P[i].burstTime << " " << P[i].queueID << endl;
     }
+    for(int i = 0; i < Q.size(); i++) {
+        cout << Q[i].QID << " " << Q[i].schedulingPolicy << endl;
+        
+        // TEST SRTN va SJF
+        if (Q[i].schedulingPolicy == "SRTN") {
+            RunSRTN(P, Q[i]);
+        } 
+        else if (Q[i].schedulingPolicy == "SJF") {
+            RunSJF(P, Q[i]);
+        }
+        else {
+            cout << "Loi: Khong chon duoc" << endl;
+        }
+    }
+
     return 0;
 }
