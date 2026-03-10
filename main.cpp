@@ -1,9 +1,16 @@
 #include <iostream>
 #include <string>
 #include <vector>
+#include <utility>
+#include <iomanip>
 #include <fstream>
 
 using namespace std;
+
+typedef struct TimeLog{
+    int start, end;
+    string QueueID, ProID;
+} TimeLog;
 
 struct Process {
     string PID;
@@ -48,7 +55,6 @@ struct Queue {
     int timeSlice;
     string schedulingPolicy;
     vector <Process*> readyQueue;
-
     Queue(){
         QID = "";
         timeSlice = 0;
@@ -74,28 +80,21 @@ void ReadFile(string filename, vector<Queue> &Q, vector<Process> &P){
     }
     int n;
     input >> n;
-    input.ignore();
     Q.resize(3);
     for(int i = 0; i < 3; i++){
-        getline(input, Q[i].QID, ' ');
-        input >> Q[i].timeSlice;
-        input.ignore();
-        getline(input, Q[i].schedulingPolicy);
+        input >> Q[i].QID >> Q[i].timeSlice >> Q[i].schedulingPolicy;
     }
     P.resize(5);
     for(int i = 0; i < 5; i++){
-        getline(input, P[i].PID, ' ');
-        input >> P[i].arrivalTime;
-        input >> P[i].burstTime;
-        input.ignore();
-        getline(input, P[i].queueID);
+        input >> P[i].PID >> P[i].arrivalTime >> P[i].burstTime >> P[i].queueID;
+        P[i].remainingTime = P[i].burstTime;
+        P[i].isCompleted = false;
     }
     input.close();
 }
 
 int findShortestProcess(const vector<Process*>& readyQueue) {
     if (readyQueue.empty()) return -1; 
-    
     int minIndex = 0; 
     for (int i = 1; i < readyQueue.size(); i++) {
         if (readyQueue[i]->remainingTime < readyQueue[minIndex]->remainingTime) {
@@ -109,66 +108,79 @@ int findShortestProcess(const vector<Process*>& readyQueue) {
     return minIndex;
 }
 
-void runSRTN(vector<Process>& P, Queue& Q) {
-    int currentTime = 0;
-    int completedCount = 0;
+void runSRTN(vector<Process>& P, Queue& Q, int& globalTime, vector<TimeLog>& Chart) {
+    int timeSpent = 0;
     int n = P.size();
 
-    int expectedProcesses = 0;
-    for (int i = 0; i < n; i++) {
-        if (P[i].queueID == Q.QID) {
-            expectedProcesses++;
-        }
-    }
+    while (timeSpent < Q.timeSlice) {
 
-    while (completedCount < expectedProcesses) {
-        
+        int remaining = 0;
+        for(int i = 0; i < P.size(); i++) if(P[i].queueID == Q.QID && !P[i].isCompleted) remaining++;
+        if(remaining == 0) break;
+
         for (int i = 0; i < n; i++) {
-            if (P[i].arrivalTime == currentTime && P[i].queueID == Q.QID) {
-                Q.readyQueue.push_back(&P[i]);
+            if (P[i].arrivalTime <= globalTime && P[i].queueID == Q.QID && !P[i].isCompleted) {
+                bool existed = false;
+                for(int j = 0; j < Q.readyQueue.size(); j++) if(P[i].PID == Q.readyQueue[j]->PID) existed = true;
+                if(!existed) Q.readyQueue.push_back(&P[i]);
             }
         }
-
+        //Kiếm phần tử có thời gian còn lại nhỏ nhất
         int bestIndex = findShortestProcess(Q.readyQueue);
-        if (bestIndex != -1) {
-            Process* currentProcess = Q.readyQueue[bestIndex];
-            currentProcess->remainingTime--;
-
-            if (currentProcess->remainingTime == 0) {
-                currentProcess->completionTime = currentTime + 1;
-                currentProcess->turnaroundTime = currentProcess->completionTime - currentProcess->arrivalTime;
-                currentProcess->waitingTime = currentProcess->turnaroundTime - currentProcess->burstTime;
-                currentProcess->isCompleted = true;
-                
-                completedCount++;
-                Q.readyQueue.erase(Q.readyQueue.begin() + bestIndex);
+        //Nếu queue rỗng
+        if (bestIndex == -1) {
+            bool stillRun = false;
+            for(int i = 0; i < P.size(); i++) if(P[i].queueID == Q.QID && !P[i].isCompleted) stillRun = true;
+            if(!stillRun) break;
+            else{
+                //CPU trống nhưng vẫn phải cho đồng hồ chạy
+                globalTime++;
+                timeSpent++;
+                continue;
             }
         }
-        currentTime++;
+
+        Process* currentProcess = Q.readyQueue[bestIndex];
+        if(Chart.empty() || (Chart.back().ProID  != currentProcess->PID)){
+            Chart.push_back({globalTime, globalTime + 1, Q.QID, currentProcess->PID});
+        }
+        else Chart.back().end = globalTime + 1;
+        
+        currentProcess->remainingTime--;
+        globalTime++;
+        timeSpent++;
+        if (currentProcess->remainingTime == 0) {
+            currentProcess->completionTime = globalTime;
+            currentProcess->turnaroundTime = currentProcess->completionTime - currentProcess->arrivalTime;
+            currentProcess->waitingTime = currentProcess->turnaroundTime - currentProcess->burstTime;
+            currentProcess->isCompleted = true;
+            Q.readyQueue.erase(Q.readyQueue.begin() + bestIndex);
+        }
     }
 }
 
-void runSJF(vector<Process>& P, Queue& Q) {
-    int currentTime = 0;
-    int completedCount = 0;
+void runSJF(vector<Process>& P, Queue& Q, int& globalTime, vector<TimeLog>& Chart) {
+    int timeSpent = 0;
     int n = P.size();
+
     Process* activeProcess = nullptr;
+    while (timeSpent < Q.timeSlice) {
 
-    int expectedProcesses = 0;
-    for (int i = 0; i < n; i++) {
-        if (P[i].queueID == Q.QID) {
-            expectedProcesses++;
+        int remaining = 0;
+        for(int i = 0; i < P.size(); i++) {
+            if(P[i].queueID == Q.QID && !P[i].isCompleted) remaining++;
         }
-    }
-
-    while (completedCount < expectedProcesses) {
+        if(remaining == 0) break;
         
         for (int i = 0; i < n; i++) {
-            if (P[i].arrivalTime == currentTime && P[i].queueID == Q.QID) {
-                Q.readyQueue.push_back(&P[i]);
+            if (P[i].arrivalTime <= globalTime && P[i].queueID == Q.QID && !P[i].isCompleted) {
+                bool existed = false;
+                for(int j = 0; j < Q.readyQueue.size(); j++) if(P[i].PID == Q.readyQueue[j]->PID) existed = true;
+                if (activeProcess != nullptr && activeProcess->PID == P[i].PID) existed = true;
+                if(!existed) Q.readyQueue.push_back(&P[i]);
             }
         }
-
+    
         if (activeProcess == nullptr && !Q.readyQueue.empty()) {
             int bestIndex = findShortestProcess(Q.readyQueue);
             if (bestIndex != -1) {
@@ -177,22 +189,60 @@ void runSJF(vector<Process>& P, Queue& Q) {
             }
         }
 
+        if(Chart.empty() || (Chart.back().ProID  != activeProcess->PID)){
+            Chart.push_back({globalTime, globalTime + 1, Q.QID, activeProcess->PID});
+        }
+        else Chart.back().end = globalTime + 1;
+
 
         if (activeProcess != nullptr) {
             activeProcess->remainingTime--;
+            globalTime++;
+            timeSpent++;
 
             if (activeProcess->remainingTime == 0) {
-                activeProcess->completionTime = currentTime + 1;
+                activeProcess->completionTime = globalTime;
                 activeProcess->turnaroundTime = activeProcess->completionTime - activeProcess->arrivalTime;
                 activeProcess->waitingTime = activeProcess->turnaroundTime - activeProcess->burstTime;
                 activeProcess->isCompleted = true;
-                
-                completedCount++;
                 activeProcess = nullptr;
             }
         }
-        currentTime++;
+        else{
+            globalTime++;
+            timeSpent++;
+        }
     }
+    if(activeProcess != nullptr && !activeProcess->isCompleted){
+        Q.readyQueue.push_back(activeProcess);
+    }
+}
+
+void WriteFile(string fileName, vector<TimeLog> Chart, vector<Process> P){
+    ofstream output;
+    output.open(fileName);
+    output << "================== CPU SCHEDULING DIAGRAM ==================\n\n";
+    output << "[Start - End]\t" << "Queue\t" << "Process\n";
+    output << "------------------------------------\n";
+    for(int i = 0; i < Chart.size(); i++){
+        if(i < 3) output << "[" << Chart[i].start << " - " << Chart[i].end << "]\t\t\t" << Chart[i].QueueID << "\t\t" << Chart[i].ProID << endl;
+        else output << "[" << Chart[i].start << " - " << Chart[i].end << "]\t\t" << Chart[i].QueueID << "\t\t" << Chart[i].ProID << endl;
+    }
+    output << endl;
+    output << "================ PROCESS STATISTICS ================\n\n";
+    output << "Process\t\tArrival\t\tBurst\t\tCompletion\t\tTurnaround\t\tWaiting\n";
+    output << "------------------------------------------------------------------------------\n";
+    float turnAverage = 0, waitAverage = 0;
+    for(int i = 0; i < P.size(); i++){
+        output << P[i].PID << "\t\t\t" << P[i].arrivalTime << "\t\t\t" << P[i].burstTime << "\t\t\t" << P[i].completionTime << "\t\t\t\t" << P[i].turnaroundTime << "\t\t\t\t" << P[i].waitingTime << endl;
+        turnAverage += P[i].turnaroundTime;
+        waitAverage += P[i].waitingTime;
+    }
+    output << "------------------------------------------------------------------------------\n";
+    output << "Average Turnaround Time : " << fixed << setprecision(1) << turnAverage / 5 << endl;
+    output << "Average Waiting Time    : " << fixed << setprecision(1) << waitAverage / 5 << endl << endl << endl;
+    output << "====================================================";
+    output.close();
 }
 
 int main(){
@@ -200,26 +250,29 @@ int main(){
     vector<Process> P;
 
     ReadFile("input.txt", Q, P);
-
-    for(int i = 0; i < 3; i++){
-        cout << Q[i].QID << " " << Q[i].timeSlice << " " << Q[i].schedulingPolicy << endl;
-    }
-    for(int i = 0; i < 5; i++){
-        cout << P[i].PID << " " << P[i].arrivalTime << " " << P[i].burstTime << " " << P[i].queueID << endl;
-    }
-    for(int i = 0; i < Q.size(); i++) {
-        cout << Q[i].QID << " " << Q[i].schedulingPolicy << endl;
-        
-        if (Q[i].schedulingPolicy == "SRTN") {
-            runSRTN(P, Q[i]);
-        } 
-        else if (Q[i].schedulingPolicy == "SJF") {
-            runSJF(P, Q[i]);
+    vector<TimeLog> Chart;
+    int globalTime = 0;
+    bool completed = false;
+    while(!completed){
+        completed = true;
+        for(int i = 0; i < Q.size(); i++) {
+            if (Q[i].schedulingPolicy == "SRTN") {
+                runSRTN(P, Q[i], globalTime, Chart);
+            } 
+            else if (Q[i].schedulingPolicy == "SJF") {
+                runSJF(P, Q[i], globalTime, Chart);
+            }
+            else {
+                cout << "Loi: Khong chon duoc" << endl;
+            }
         }
-        else {
-            cout << "Loi: Khong chon duoc" << endl;
+        for(int i = 0; i < P.size(); i++){
+            if(!P[i].isCompleted){
+                completed = false;
+                break;
+            }
         }
     }
-
+    WriteFile("output.txt", Chart, P);
     return 0;
 }
