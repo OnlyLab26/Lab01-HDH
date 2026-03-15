@@ -72,24 +72,28 @@ typedef struct Queue Queue;
 typedef struct Process Process;
 
 void ReadFile(string filename, vector<Queue> &Q, vector<Process> &P){
-    ifstream input;
-    input.open(filename);
+    ifstream input(filename);
     if(!input){
         cout << "Cannot open file!\n";
         return;
     }
-    int n;
-    input >> n;
-    Q.resize(3);
-    for(int i = 0; i < 3; i++){
+    
+    int numQueues;
+    
+    input >> numQueues;
+    Q.resize(numQueues);
+    for(int i = 0; i < numQueues; i++){
         input >> Q[i].QID >> Q[i].timeSlice >> Q[i].schedulingPolicy;
     }
-    P.resize(5);
-    for(int i = 0; i < 5; i++){
-        input >> P[i].PID >> P[i].arrivalTime >> P[i].burstTime >> P[i].queueID;
-        P[i].remainingTime = P[i].burstTime;
-        P[i].isCompleted = false;
+
+    Process tempP;
+    while (input >> tempP.PID >> tempP.arrivalTime >> tempP.burstTime >> tempP.queueID) {
+        tempP.remainingTime = tempP.burstTime;
+        tempP.isCompleted = false;
+        
+        P.push_back(tempP); 
     }
+    
     input.close();
 }
 
@@ -125,23 +129,14 @@ void runSRTN(vector<Process>& P, Queue& Q, int& globalTime, vector<TimeLog>& Cha
                 if(!existed) Q.readyQueue.push_back(&P[i]);
             }
         }
-        //Kiếm phần tử có thời gian còn lại nhỏ nhất
         int bestIndex = findShortestProcess(Q.readyQueue);
-        //Nếu queue rỗng
         if (bestIndex == -1) {
-            bool stillRun = false;
-            for(int i = 0; i < P.size(); i++) if(P[i].queueID == Q.QID && !P[i].isCompleted) stillRun = true;
-            if(!stillRun) break;
-            else{
-                //CPU trống nhưng vẫn phải cho đồng hồ chạy
-                globalTime++;
-                timeSpent++;
-                continue;
-            }
+            break; 
         }
 
         Process* currentProcess = Q.readyQueue[bestIndex];
-        if(Chart.empty() || (Chart.back().ProID  != currentProcess->PID)){
+
+        if(Chart.empty() || (Chart.back().ProID != currentProcess->PID)){
             Chart.push_back({globalTime, globalTime + 1, Q.QID, currentProcess->PID});
         }
         else Chart.back().end = globalTime + 1;
@@ -180,7 +175,7 @@ void runSJF(vector<Process>& P, Queue& Q, int& globalTime, vector<TimeLog>& Char
                 if(!existed) Q.readyQueue.push_back(&P[i]);
             }
         }
-    
+
         if (activeProcess == nullptr && !Q.readyQueue.empty()) {
             int bestIndex = findShortestProcess(Q.readyQueue);
             if (bestIndex != -1) {
@@ -188,19 +183,21 @@ void runSJF(vector<Process>& P, Queue& Q, int& globalTime, vector<TimeLog>& Char
                 Q.readyQueue.erase(Q.readyQueue.begin() + bestIndex);
             }
         }
+    
+        if (activeProcess == nullptr) {
+            break; 
+        }
 
-        if(Chart.empty() || (Chart.back().ProID  != activeProcess->PID)){
+        if(Chart.empty() || (Chart.back().ProID != activeProcess->PID)){
             Chart.push_back({globalTime, globalTime + 1, Q.QID, activeProcess->PID});
         }
         else Chart.back().end = globalTime + 1;
 
+        activeProcess->remainingTime--;
+        globalTime++;
+        timeSpent++;
 
-        if (activeProcess != nullptr) {
-            activeProcess->remainingTime--;
-            globalTime++;
-            timeSpent++;
-
-            if (activeProcess->remainingTime == 0) {
+        if (activeProcess->remainingTime == 0) {
                 activeProcess->completionTime = globalTime;
                 activeProcess->turnaroundTime = activeProcess->completionTime - activeProcess->arrivalTime;
                 activeProcess->waitingTime = activeProcess->turnaroundTime - activeProcess->burstTime;
@@ -208,11 +205,6 @@ void runSJF(vector<Process>& P, Queue& Q, int& globalTime, vector<TimeLog>& Char
                 activeProcess = nullptr;
             }
         }
-        else{
-            globalTime++;
-            timeSpent++;
-        }
-    }
     if(activeProcess != nullptr && !activeProcess->isCompleted){
         Q.readyQueue.push_back(activeProcess);
     }
@@ -239,40 +231,67 @@ void WriteFile(string fileName, vector<TimeLog> Chart, vector<Process> P){
         waitAverage += P[i].waitingTime;
     }
     output << "------------------------------------------------------------------------------\n";
-    output << "Average Turnaround Time : " << fixed << setprecision(1) << turnAverage / 5 << endl;
-    output << "Average Waiting Time    : " << fixed << setprecision(1) << waitAverage / 5 << endl << endl << endl;
+    output << "Average Turnaround Time : " << fixed << setprecision(1) << turnAverage / P.size() << endl;
+    output << "Average Waiting Time    : " << fixed << setprecision(1) << waitAverage / P.size() << endl << endl << endl;
     output << "====================================================";
     output.close();
 }
 
-int main(){
+int main(int argc, char* argv[]){
+    if (argc != 3) {
+        cout << "Sai cu phap" << endl;
+        return 1;
+    }
+
     vector<Queue> Q;
     vector<Process> P;
 
-    ReadFile("input.txt", Q, P);
+    string inputFile = argv[1];
+    string outputFile = argv[2];
+
+    ReadFile(inputFile, Q, P);
+    
     vector<TimeLog> Chart;
     int globalTime = 0;
-    bool completed = false;
-    while(!completed){
-        completed = true;
-        for(int i = 0; i < Q.size(); i++) {
+    
+    while (true) {
+        bool allCompleted = true;
+        for (const auto& p : P) {
+            if (!p.isCompleted) {
+                allCompleted = false;
+                break;
+            }
+        }
+        if (allCompleted) break;
+
+        bool cpuIdleThisCycle = true;
+
+        for (int i = 0; i < Q.size(); i++) {
+            int timeBeforeQueue = globalTime; 
+            
             if (Q[i].schedulingPolicy == "SRTN") {
                 runSRTN(P, Q[i], globalTime, Chart);
             } 
             else if (Q[i].schedulingPolicy == "SJF") {
                 runSJF(P, Q[i], globalTime, Chart);
             }
-            else {
-                cout << "Loi: Khong chon duoc" << endl;
+
+            if (globalTime > timeBeforeQueue) {
+                cpuIdleThisCycle = false;
             }
         }
-        for(int i = 0; i < P.size(); i++){
-            if(!P[i].isCompleted){
-                completed = false;
-                break;
+
+        if (cpuIdleThisCycle) {
+            if(Chart.empty() || Chart.back().ProID != "IDLE"){
+                Chart.push_back({globalTime, globalTime + 1, "SYS", "IDLE"});
+            } else {
+                Chart.back().end = globalTime + 1;
             }
+            globalTime++;
         }
     }
-    WriteFile("output.txt", Chart, P);
+    
+    WriteFile(outputFile, Chart, P);
+    
     return 0;
 }
